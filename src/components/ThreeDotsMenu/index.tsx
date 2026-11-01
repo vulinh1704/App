@@ -15,6 +15,7 @@ import useThemeStyles from '@hooks/useThemeStyles';
 import useWindowDimensions from '@hooks/useWindowDimensions';
 
 import {isMobile} from '@libs/Browser';
+import observeAnchorMove from '@libs/observeAnchorMove';
 
 import type {AnchorPosition} from '@styles/index';
 import variables from '@styles/variables';
@@ -136,15 +137,32 @@ function ThreeDotsMenu({
         hidePopoverMenu();
     }, [hidePopoverMenu, isBehindModal, isPopupMenuVisible, isContainerFocused]);
 
+    const updateMenuPosition = () => {
+        getMenuPosition?.().then((value) => {
+            // Keep the previous object when the button hasn't moved, so the observer below isn't re-armed for nothing.
+            setPosition((previousPosition) => (previousPosition?.horizontal === value.horizontal && previousPosition?.vertical === value.vertical ? previousPosition : value));
+        });
+    };
+
     useLayoutEffect(() => {
         if (!getMenuPosition || !isPopupMenuVisible) {
             return;
         }
 
-        getMenuPosition?.().then((value) => {
-            setPosition(value);
-        });
-    }, [windowWidth, windowHeight, shouldSelfPosition, getMenuPosition, isPopupMenuVisible]);
+        updateMenuPosition();
+    }, [windowWidth, windowHeight, shouldSelfPosition, getMenuPosition, isPopupMenuVisible, updateMenuPosition]);
+
+    // The effect above measures in the same commit as the window size change. A button inside a virtualized list row
+    // only moves later, once the list has re-measured itself and given the row its new width. So, while the menu is
+    // open, watch where the button actually is and measure again as soon as it moves. Re-armed after every position
+    // or window size change, so it always watches the box the menu is currently anchored to.
+    useLayoutEffect(() => {
+        if (!getMenuPosition || !isPopupMenuVisible) {
+            return;
+        }
+
+        return observeAnchorMove(buttonRef.current, updateMenuPosition);
+    }, [getMenuPosition, isPopupMenuVisible, position, windowWidth, windowHeight, updateMenuPosition]);
 
     const getIconFill = () => {
         if (!shouldChangeFillOnOpen) {
